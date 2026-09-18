@@ -17,6 +17,7 @@ class AssetEnrollmentTests(unittest.TestCase):
                 "FADS_TOKEN_KEY": "t" * 64,
                 "FADS_ENROLLMENT_KEY": "e" * 64,
                 "FADS_GEO_HASH_SALT": "g" * 64,
+                "FADS_TOKEN_EPOCH": "1",
             },
             clear=False,
         )
@@ -48,6 +49,12 @@ class AssetEnrollmentTests(unittest.TestCase):
         self.assertEqual(verified.attested_ip_hash, IP_HASH)
         self.assertEqual(verified.attestation_providers, PROVIDERS)
         self.assertEqual(verified.scope, "GLOBAL_EXCEPT_KP")
+
+    def test_epoch_rotation_revokes_existing_token(self):
+        token, _ = self._issue()
+        with patch.dict(os.environ, {"FADS_TOKEN_EPOCH": "2"}, clear=False):
+            with self.assertRaises(AssetAuthError):
+                verify_asset_token(token, now=1_100)
 
     def test_kp_token_is_rejected(self):
         with self.assertRaises(AssetAuthError):
