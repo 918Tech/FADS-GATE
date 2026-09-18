@@ -10,7 +10,7 @@ class BeaconSyncTests(unittest.TestCase):
     def setUp(self):
         self.env = patch.dict(
             os.environ,
-            {"FADS_BEACON_SYNC_KEY": "b" * 64},
+            {"FADS_BEACON_SYNC_KEY": "b" * 64, "FADS_BEACON_ID": "918-beacon-test"},
             clear=False,
         )
         self.env.start()
@@ -25,6 +25,7 @@ class BeaconSyncTests(unittest.TestCase):
             method="POST",
             path="/v2/beacon-sync/anchor",
             body=body,
+            beacon_id_header=signed["x-918-beacon-id"],
             timestamp_header=signed["x-918-beacon-timestamp"],
             signature_header=signed["x-918-beacon-signature"],
             now=1000,
@@ -55,6 +56,21 @@ class BeaconSyncTests(unittest.TestCase):
                 signature_header=signed["x-918-beacon-signature"],
                 now=1000,
             )
+
+    def test_wrong_beacon_keyring_entry_fails(self):
+        body = b"{}"
+        signed = headers(method="POST", path="/v2/beacon-sync/anchor", body=body, timestamp=1000)
+        with patch.dict(os.environ, {"FADS_BEACON_SYNC_KEYS": "{\"other\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}"}, clear=False):
+            with self.assertRaises(BeaconSyncAuthError):
+                verify(
+                    method="POST",
+                    path="/v2/beacon-sync/anchor",
+                    body=body,
+                    beacon_id_header=signed["x-918-beacon-id"],
+                    timestamp_header=signed["x-918-beacon-timestamp"],
+                    signature_header=signed["x-918-beacon-signature"],
+                    now=1000,
+                )
 
     def test_coordinator_rejects_raw_wifi_identifier(self):
         with self.assertRaises(ValueError):
