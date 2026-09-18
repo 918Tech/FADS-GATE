@@ -5,7 +5,7 @@ if (-not $env:FADS_ENROLLMENT_KEY) { throw "Set FADS_ENROLLMENT_KEY for one-time
 if (-not $env:FADS_REGION) { throw "Set FADS_REGION to the protected asset region." }
 
 $AssetId = if ($env:FADS_ASSET_ID) { $env:FADS_ASSET_ID } else { $env:COMPUTERNAME }
-$Ref = if ($env:FADS_VERSION_REF) { $env:FADS_VERSION_REF } else { "e5c47d6f9521cc1ad574ee3face37044d148fccb" }
+$Ref = if ($env:FADS_VERSION_REF) { $env:FADS_VERSION_REF } else { "main" }
 $Base = Join-Path $env:ProgramData "918 Technologies\FADS"
 $Venv = Join-Path $Base "venv"
 $TokenFile = Join-Path $Base "fads.asset"
