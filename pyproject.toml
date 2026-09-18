@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fads-gate"
-version = "0.2.0"
+version = "0.3.0"
 description = "FADS Guardian: evidence-based agent detection and capability gateway"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -15,6 +15,7 @@ dependencies = []
 [project.scripts]
 fads-gate = "fads_gate.cli:main"
 fads-waterplum = "fads_gate.server:main"
+fads-waterplum-scan = "fads_gate.sensor_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
