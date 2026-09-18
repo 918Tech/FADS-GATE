@@ -31,7 +31,6 @@ def main() -> int:
     }
     if args.expected_country:
         payload["country"] = args.expected_country.upper()
-    }
     request = urllib.request.Request(
         args.endpoint,
         data=json.dumps(payload, sort_keys=True).encode("utf-8"),
