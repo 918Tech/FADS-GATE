@@ -5,16 +5,31 @@ from fads_gate.waterplum import assess_waterplum
 
 
 class WaterPlumTests(unittest.TestCase):
-    def test_exact_published_ip_quarantines(self):
-        result = assess_waterplum(observables={"ips": ["95.164.17.24"]})
+    def test_current_2026_staging_ip_quarantines(self):
+        result = assess_waterplum(observables={"ips": ["162.0.239.85"]})
         self.assertEqual(result.state, "QUARANTINED")
         self.assertEqual(result.route, "HOUSE_OF_MIRRORS_WATERPLUM")
-        self.assertIn("published-ip:95.164.17.24", result.matches)
+        self.assertIn("published-2026-ip:162.0.239.85", result.matches)
 
-    def test_published_package_quarantines(self):
-        result = assess_waterplum(observables={"packages": ["passports-js"]})
+    def test_current_2026_operator_ip_quarantines(self):
+        result = assess_waterplum(observables={"ips": ["147.124.202.205"]})
         self.assertEqual(result.state, "QUARANTINED")
-        self.assertIn("published-package:passports-js", result.matches)
+        self.assertIn("published-2026-ip:147.124.202.205", result.matches)
+
+    def test_stoatwaffle_ip_quarantines(self):
+        result = assess_waterplum(observables={"ips": ["185.163.125.196"]})
+        self.assertEqual(result.state, "QUARANTINED")
+        self.assertIn("published-2026-ip:185.163.125.196", result.matches)
+
+    def test_current_domain_and_hash_quarantine(self):
+        result = assess_waterplum(
+            observables={
+                "domains": ["https://w3pi.social/"],
+                "sha256": ["42620128470e26d473a128f354b77ca2c5fe9e5782e7addc1e3f863dbd0cd9b0"],
+            }
+        )
+        self.assertEqual(result.state, "QUARANTINED")
+        self.assertIn("published-2026-domain:w3pi.social", result.matches)
 
     def test_fbi_vscode_and_command_markers_raise_risk(self):
         result = assess_waterplum(
@@ -36,7 +51,7 @@ class WaterPlumTests(unittest.TestCase):
         result = _decision(
             {
                 "capabilities": ["repo.read", "network.outbound", "secrets.read"],
-                "observables": {"ips": ["95.164.17.24"]},
+                "observables": {"ips": ["162.0.239.85"]},
             }
         )
         self.assertEqual(result["granted"], ["repo.read"])
