@@ -9,7 +9,7 @@ fi
 : "${FADS_ENROLLMENT_KEY:?Set FADS_ENROLLMENT_KEY for one-time enrollment}"
 : "${FADS_REGION:?Set FADS_REGION to the protected asset region}"
 FADS_ASSET_ID="${FADS_ASSET_ID:-$(hostname)}"
-FADS_REF="${FADS_VERSION_REF:-e5c47d6f9521cc1ad574ee3face37044d148fccb}"
+FADS_REF="${FADS_VERSION_REF:-main}"
 BASE="/opt/918-fads"
 STATE="/etc/918"
 TOKEN_FILE="${STATE}/fads.asset"
