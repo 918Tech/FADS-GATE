@@ -25,11 +25,11 @@ class GeoAttestationTests(unittest.TestCase):
     def tearDown(self):
         self.env.stop()
 
-    def test_rightmost_public_forwarded_ip_wins(self):
+    def test_render_first_public_forwarded_ip_wins(self):
         headers = {
-            "X-Forwarded-For": "203.0.113.9, 198.51.100.8, 8.8.8.8"
+            "X-Forwarded-For": "1.1.1.1, 9.9.9.9, 8.8.8.8"
         }
-        self.assertEqual(source_ip_from_headers(headers, "10.0.0.2"), "8.8.8.8")
+        self.assertEqual(source_ip_from_headers(headers, "10.0.0.2"), "1.1.1.1")
 
     def test_private_only_forwarded_chain_fails_closed(self):
         with self.assertRaises(GeoAttestationError):

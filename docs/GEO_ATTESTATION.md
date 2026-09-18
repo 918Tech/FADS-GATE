@@ -4,7 +4,7 @@ FADS-GATE v0.6 removes operator-declared country as an authorization input.
 
 ## Enrollment
 
-The server derives the source IP from the reverse-proxy forwarding chain, selects the rightmost globally routable address, and performs country lookup through at least two independent geolocation providers.
+The server derives the source IP from the reverse-proxy forwarding chain. On Render, the first globally routable `X-Forwarded-For` address is treated as the client address. Other reverse-proxy topologies can set `FADS_X_FORWARDED_FOR_MODE=rightmost` when that ordering is appropriate. The selected source IP is then checked through at least two independent geolocation providers.
 
 Default providers:
 
