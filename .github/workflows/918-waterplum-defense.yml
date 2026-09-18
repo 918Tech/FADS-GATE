@@ -28,6 +28,9 @@ jobs:
           fads-waterplum-scan \
             --root . \
             --endpoint https://nine18-fads-waterplum.onrender.com/v1/evaluate \
+            --endpoint https://nine18-fads-oregon.onrender.com/v1/evaluate \
+            --endpoint https://nine18-fads-frankfurt.onrender.com/v1/evaluate \
+            --endpoint https://nine18-fads-singapore.onrender.com/v1/evaluate \
             --fail-on restricted \
             --output waterplum-evidence.json
 
