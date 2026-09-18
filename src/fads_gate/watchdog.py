@@ -16,7 +16,8 @@ DEFAULT_TARGETS = (
     ("asia", "https://nine18-fads-singapore.onrender.com/healthz"),
     ("oceania", "https://nine18-beacon-oceania.onrender.com/healthz"),
     ("antarctica", "https://nine18-beacon-antarctica.onrender.com/healthz"),
-    ("proximity-coordinator", "https://nine18-proximity-coordinator.onrender.com/healthz"),
+    ("proximity-coordinator-us", "https://nine18-proximity-coordinator.onrender.com/healthz"),
+    ("proximity-coordinator-eu", "https://nine18-proximity-coordinator-eu.onrender.com/healthz"),
 )
 
 
