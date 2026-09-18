@@ -49,6 +49,7 @@ def _probe(name: str, url: str) -> dict[str, Any]:
             "http_status": response.status,
             "latency_ms": round((time.monotonic() - started) * 1000, 1),
             "status": payload.get("status") if isinstance(payload, dict) else None,
+            "build_commit": (payload.get("build_commit") or (payload.get("node", {}) if isinstance(payload.get("node"), dict) else {}).get("build_commit")) if isinstance(payload, dict) else None,
         }
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
         return {
@@ -62,10 +63,14 @@ def _probe(name: str, url: str) -> dict[str, Any]:
 
 def main() -> int:
     results = [_probe(name, url) for name, url in _targets()]
-    healthy = all(item["ok"] for item in results)
+    commits = {item.get("build_commit") for item in results if item.get("build_commit") not in {None, "unknown"}}
+    version_consistent = len(commits) <= 1
+    healthy = all(item["ok"] for item in results) and version_consistent
     output = {
         "schema": "918-WATCHDOG/1",
         "healthy": healthy,
+        "version_consistent": version_consistent,
+        "build_commits": sorted(commits),
         "targets": results,
     }
     print(json.dumps(output, indent=2, sort_keys=True))
