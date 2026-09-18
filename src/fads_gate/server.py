@@ -7,6 +7,7 @@ from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
+from .beacon_sync import BeaconSyncError, fetch_candidates, publish_anchor
 from .continent_beacons import current_beacon
 from .asset_auth import (
     AssetAuthError,
@@ -124,7 +125,7 @@ def _decision(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "FADS-GATE/0.7"
+    server_version = "FADS-GATE/0.8"
 
     def _json(self, status: int, value: Any) -> None:
         body = json.dumps(value, sort_keys=True).encode("utf-8")
@@ -163,6 +164,7 @@ class Handler(BaseHTTPRequestHandler):
                     "geo_attestation": "two-provider-consensus",
                     "passive_proximity_api": ["/v2/proximity/observe", "/v2/proximity/next"],
                     "wifi_network_use": False,
+                    "cross_beacon_sync": True,
                 },
             )
             return
@@ -211,6 +213,11 @@ class Handler(BaseHTTPRequestHandler):
                 payload = self._read_json()
                 anchor = parse_anchor(asset_id=identity.asset_id, payload=payload)
                 put_anchor(anchor)
+                sync_status = "global"
+                try:
+                    publish_anchor(anchor)
+                except BeaconSyncError:
+                    sync_status = "local_degraded"
                 if self.path == "/v2/proximity/observe":
                     self._json(
                         200,
@@ -222,14 +229,26 @@ class Handler(BaseHTTPRequestHandler):
                             "network_use": False,
                             "association": False,
                             "authentication": False,
+                            "sync_status": sync_status,
                             "node": _node(),
                         },
                     )
                     return
+                candidate_beacons = {}
+                candidates = list_anchors()
+                try:
+                    synced = fetch_candidates(exclude_asset=identity.asset_id)
+                    candidates = [item.anchor for item in synced]
+                    candidate_beacons = {item.anchor.asset_id: item.beacon for item in synced}
+                    sync_status = "global"
+                except BeaconSyncError:
+                    sync_status = "local_degraded"
                 hop = next_hop(
                     current=anchor,
-                    candidates=list_anchors(),
+                    candidates=candidates,
                 )
+                if hop is not None and hop.get("next_asset") in candidate_beacons:
+                    hop["next_beacon"] = candidate_beacons[hop["next_asset"]]
                 self._json(
                     200,
                     {
@@ -239,6 +258,7 @@ class Handler(BaseHTTPRequestHandler):
                         "network_use": False,
                         "association": False,
                         "authentication": False,
+                        "sync_status": sync_status,
                         "node": _node(),
                     },
                 )
