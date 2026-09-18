@@ -23,6 +23,8 @@ from .proximity_jumper import next_hop
 from .proximity_store import list_anchors, parse_anchor, put_anchor
 from .public_threat_arrays import enrich_observables
 from .waterplum import PROFILE_DATE, PROFILE_ID, assess_waterplum
+from .rate_limit import RateLimitExceeded, check_rate_limit
+from .evidence_signing import sign_evidence
 
 ALLOW = {"repo.read", "telemetry.read"}
 HARD_DENY = {"secrets.read", "capability.delegate", "network.outbound"}
@@ -40,6 +42,7 @@ def _node() -> dict[str, Any]:
         "id": os.environ.get("FADS_NODE_ID", "fads-node"),
         "region": os.environ.get("FADS_NODE_REGION", "unknown"),
         "scope": GLOBAL_SCOPE,
+        "build_commit": os.environ.get("RENDER_GIT_COMMIT", os.environ.get("FADS_BUILD_COMMIT", "unknown")),
         "beacon": {
             "id": beacon.beacon_id,
             "logical_continent": beacon.logical_continent,
@@ -115,6 +118,7 @@ def _decision(payload: dict[str, Any]) -> dict[str, Any]:
             "origin": "derived",
             "content_hash": f"sha256:{evidence_hash}",
             "canonical": False,
+            **sign_evidence(evidence_payload),
         },
         "active_contact": False,
         "attribution_note": (
@@ -127,7 +131,7 @@ def _decision(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "FADS-GATE/1.0"
+    server_version = "FADS-GATE/1.1"
 
     def _json(self, status: int, value: Any) -> None:
         body = json.dumps(value, sort_keys=True).encode("utf-8")
@@ -176,7 +180,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         try:
+            source_key = source_ip_from_headers(dict(self.headers.items()), self.client_address[0] if self.client_address else None)
+            check_rate_limit(f"{self.path}:{source_key}", limit=int(os.environ.get("FADS_RATE_LIMIT", "120")), window_seconds=60)
+
             if self.path == "/v1/enroll":
+                if os.environ.get("FADS_ENROLLMENT_ENABLED", "false").strip().lower() not in {"1","true","yes","on"}:
+                    self._json(404, {"error": "not_found"})
+                    return
                 if not enrollment_key_valid(self.headers.get("x-918-enrollment-key")):
                     self._json(401, {"error": "invalid_enrollment_key"})
                     return
@@ -328,6 +338,8 @@ class Handler(BaseHTTPRequestHandler):
                 return
 
             self._json(404, {"error": "not_found"})
+        except RateLimitExceeded as exc:
+            self._json(429, {"error": "rate_limited", "detail": str(exc), "route": "NO_OPERATION"})
         except GeoExcludedError as exc:
             self._json(451, {"error": "geo_excluded", "detail": str(exc), "route": "NO_OPERATION"})
         except GeoAttestationError as exc:

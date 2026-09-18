@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 import urllib.parse
@@ -78,7 +79,7 @@ def _validate_anchor(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "FADS-PROX-COORD/0.8"
+    server_version = "FADS-PROX-COORD/1.1"
 
     def _json(self, status: int, value: Any) -> None:
         body = json.dumps(value, sort_keys=True).encode("utf-8")
@@ -109,6 +110,7 @@ class Handler(BaseHTTPRequestHandler):
                     "anchor_ttl_seconds": TTL_SECONDS,
                     "active_anchors": count,
                     "raw_wifi_identifiers": False,
+                    "build_commit": os.environ.get("RENDER_GIT_COMMIT", os.environ.get("FADS_BUILD_COMMIT", "unknown")),
                 },
             )
             return
@@ -122,6 +124,7 @@ class Handler(BaseHTTPRequestHandler):
                 method="GET",
                 path=self.path,
                 body=b"",
+                beacon_id_header=self.headers.get("x-918-beacon-id"),
                 timestamp_header=self.headers.get("x-918-beacon-timestamp"),
                 signature_header=self.headers.get("x-918-beacon-signature"),
             )

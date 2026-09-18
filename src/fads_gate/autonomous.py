@@ -40,10 +40,12 @@ def apply_public_threat_policy(
 
     confidence = int(enrichment.get("confidence", 0) or 0)
     malicious = enrichment.get("malicious_infrastructure", [])
+    sources = enrichment.get("sources_used", [])
+    source_count = len(set(sources)) if isinstance(sources, list) else 0
     if not isinstance(malicious, list):
         malicious = []
 
-    if malicious and confidence >= 90:
+    if malicious and confidence >= 90 and source_count >= 2:
         if result.get("state") not in {"TERMINATED", "OUT_OF_SCOPE"}:
             result["state"] = "QUARANTINED"
             result["route"] = "HOUSE_OF_MIRRORS_PUBLIC_THREAT"
@@ -67,6 +69,10 @@ def apply_public_threat_policy(
                 "type": "RESTRICT_LOCAL_ASSET",
                 "reason": "public_threat_intelligence",
                 "remote_contact": False,
+            }
+            result["corroboration"] = {
+                "source_count": source_count,
+                "quarantine_requires_sources": 2,
             }
 
     return result

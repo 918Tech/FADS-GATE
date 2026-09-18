@@ -30,6 +30,7 @@ class AssetIdentity:
     attested_ip_hash: str
     attested_at: int
     attestation_providers: tuple[str, ...]
+    token_epoch: int
     scope: str = GLOBAL_SCOPE
 
 
@@ -123,6 +124,7 @@ def issue_asset_token(
     ttl = max(300, min(ttl, 365 * 24 * 60 * 60))
     expires_at = issued_at + ttl
     header = {"alg": "HS256", "typ": "918-ASSET", "ver": TOKEN_VERSION}
+    token_epoch = int(os.environ.get("FADS_TOKEN_EPOCH", "1"))
     payload = {
         "sub": asset_id,
         "country": country,
@@ -131,6 +133,7 @@ def issue_asset_token(
         "iat": issued_at,
         "exp": expires_at,
         "scope": GLOBAL_SCOPE,
+        "epoch": token_epoch,
         "attested_ip_hash": attested_ip_hash,
         "attested_at": attested_at_value,
         "attestation_providers": list(providers),
@@ -148,6 +151,7 @@ def issue_asset_token(
         attested_ip_hash,
         attested_at_value,
         providers,
+        token_epoch,
     )
     return token, identity
 
@@ -187,6 +191,13 @@ def verify_asset_token(token: str, *, now: int | None = None) -> AssetIdentity:
         raise AssetAuthError("asset token expired")
     if payload.get("scope") != GLOBAL_SCOPE:
         raise AssetAuthError("asset token scope mismatch")
+    try:
+        token_epoch = int(payload.get("epoch", 0))
+        current_epoch = int(os.environ.get("FADS_TOKEN_EPOCH", "1"))
+    except ValueError as exc:
+        raise AssetAuthError("invalid asset token epoch") from exc
+    if token_epoch != current_epoch:
+        raise AssetAuthError("asset token revoked by epoch")
 
     raw_providers = payload.get("attestation_providers", [])
     if not isinstance(raw_providers, list):
@@ -211,6 +222,7 @@ def verify_asset_token(token: str, *, now: int | None = None) -> AssetIdentity:
         attested_ip_hash,
         attested_at,
         providers,
+        token_epoch,
     )
 
 
