@@ -50,6 +50,7 @@ PROFILE_SELF_EXCLUSIONS = {
     "src/fads_gate/sensor.py",
     "tests/test_waterplum.py",
     "tests/test_sensor.py",
+    "tests/test_global_mesh.py",
     "docs/WATERPLUM.md",
 }
 
