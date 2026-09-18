@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -15,6 +14,7 @@ EXIT_BY_STATE = {
     "RESTRICTED": 2,
     "QUARANTINED": 3,
     "TERMINATED": 4,
+    "OUT_OF_SCOPE": 0,
 }
 
 
@@ -26,10 +26,19 @@ def _post_json(url: str, payload: dict) -> dict:
         method="POST",
         headers={
             "content-type": "application/json",
-            "user-agent": "918-FADS-WaterPlum-Sensor/0.3",
+            "user-agent": "918-FADS-WaterPlum-Sensor/0.4",
         },
     )
-    with urllib.request.urlopen(req, timeout=15) as response:
+    try:
+        response = urllib.request.urlopen(req, timeout=15)
+    except urllib.error.HTTPError as exc:
+        body = exc.read(1_048_576)
+        if exc.code == 451:
+            value = json.loads(body)
+            if isinstance(value, dict):
+                return value
+        raise
+    with response:
         body = response.read(1_048_576)
     value = json.loads(body)
     if not isinstance(value, dict):
@@ -37,10 +46,21 @@ def _post_json(url: str, payload: dict) -> dict:
     return value
 
 
+def _post_mesh(endpoints: list[str], payload: dict) -> tuple[dict, str]:
+    errors: list[str] = []
+    for endpoint in endpoints:
+        try:
+            return _post_json(endpoint, payload), endpoint
+        except (urllib.error.URLError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
+            errors.append(f"{endpoint}: {exc}")
+    raise RuntimeError("; ".join(errors) or "no endpoints configured")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="fads-waterplum-scan")
     parser.add_argument("--root", default=".")
-    parser.add_argument("--endpoint")
+    parser.add_argument("--endpoint", action="append", default=[])
+    parser.add_argument("--country")
     parser.add_argument(
         "--fail-on",
         choices=("restricted", "quarantined", "terminated"),
@@ -77,15 +97,19 @@ def main() -> int:
     }
 
     if args.endpoint:
+        payload = remote_payload(scan)
+        if args.country:
+            payload["protected_asset"] = {"country": args.country.upper()}
         try:
-            remote = _post_json(args.endpoint, remote_payload(scan))
-        except (urllib.error.URLError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
-            print(json.dumps({"error": "evaluator_unavailable", "detail": str(exc)}, sort_keys=True))
+            remote, endpoint = _post_mesh(args.endpoint, payload)
+        except RuntimeError as exc:
+            print(json.dumps({"error": "mesh_unavailable", "detail": str(exc)}, sort_keys=True))
             return 5
         result = {
             **result,
             "source": "local+remote",
             "remote": remote,
+            "remote_endpoint": endpoint,
             "state": str(remote.get("state", result["state"])),
             "route": str(remote.get("route", result["route"])),
             "score": int(remote.get("score", result["score"])),
