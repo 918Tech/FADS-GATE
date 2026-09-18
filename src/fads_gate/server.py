@@ -9,6 +9,7 @@ from typing import Any
 
 from .beacon_sync import BeaconSyncError, fetch_candidates, publish_anchor
 from .continent_beacons import current_beacon
+from .autonomous import apply_public_threat_policy, autonomous_enabled
 from .asset_auth import (
     AssetAuthError,
     bearer_token,
@@ -126,7 +127,7 @@ def _decision(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "FADS-GATE/0.9"
+    server_version = "FADS-GATE/1.0"
 
     def _json(self, status: int, value: Any) -> None:
         body = json.dumps(value, sort_keys=True).encode("utf-8")
@@ -167,6 +168,7 @@ class Handler(BaseHTTPRequestHandler):
                     "wifi_network_use": False,
                     "cross_beacon_sync": True,
                     "public_threat_arrays_api": "/v2/threat-arrays/enrich",
+                    "autonomous_mode": autonomous_enabled(),
                 },
             )
             return
@@ -306,6 +308,7 @@ class Handler(BaseHTTPRequestHandler):
                     "platform": identity.platform,
                 }
                 result = _decision(payload)
+                result = apply_public_threat_policy(result, payload)
                 result["asset"] = {
                     "asset_id": identity.asset_id,
                     "country": identity.country,
