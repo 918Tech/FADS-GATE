@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fads-gate"
+version = "0.1.0"
+description = "FADS Guardian: evidence-based agent detection and capability gateway"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [{name = "918 Technologies"}]
+dependencies = []
+
+[project.scripts]
+fads-gate = "fads_gate.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
