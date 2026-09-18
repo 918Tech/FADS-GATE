@@ -7,6 +7,7 @@ from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
+from .global_mesh import GLOBAL_SCOPE, evaluate_scope
 from .waterplum import PROFILE_DATE, PROFILE_ID, assess_waterplum
 
 ALLOW = {"repo.read", "telemetry.read"}
@@ -19,7 +20,39 @@ DECOY_TOPOLOGY = (
 )
 
 
+def _node() -> dict[str, str]:
+    return {
+        "id": os.environ.get("FADS_NODE_ID", "fads-node"),
+        "region": os.environ.get("FADS_NODE_REGION", "unknown"),
+        "scope": GLOBAL_SCOPE,
+    }
+
+
 def _decision(payload: dict[str, Any]) -> dict[str, Any]:
+    scope = evaluate_scope(payload)
+    node = _node()
+    if not scope.in_scope:
+        return {
+            "state": "OUT_OF_SCOPE",
+            "route": "NO_OPERATION",
+            "decision": "EXCLUDED_BY_918_POLICY",
+            "score": 0,
+            "matches": [],
+            "requested": [],
+            "granted": [],
+            "stripped": [],
+            "active_contact": False,
+            "scope": asdict(scope),
+            "node": node,
+            "evidence": {
+                "schema": "918-IPCTX/1",
+                "system": "BEACON",
+                "component": "global-defense-mesh",
+                "origin": "derived",
+                "canonical": False,
+            },
+        }
+
     requested = tuple(dict.fromkeys(map(str, payload.get("capabilities", ()))))
     assessment = assess_waterplum(
         signals=payload.get("signals"),
@@ -39,6 +72,8 @@ def _decision(payload: dict[str, Any]) -> dict[str, Any]:
         "granted": granted,
         "stripped": stripped,
         "matches": assessment.matches,
+        "scope": asdict(scope),
+        "node": node,
     }
     evidence_hash = hashlib.sha256(
         json.dumps(evidence_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -49,10 +84,12 @@ def _decision(payload: dict[str, Any]) -> dict[str, Any]:
         "requested": list(requested),
         "granted": list(granted),
         "stripped": list(stripped),
+        "scope": asdict(scope),
+        "node": node,
         "evidence": {
             "schema": "918-IPCTX/1",
             "system": "BEACON",
-            "component": "waterplum-defense",
+            "component": "global-defense-mesh",
             "origin": "derived",
             "content_hash": f"sha256:{evidence_hash}",
             "canonical": False,
@@ -68,7 +105,7 @@ def _decision(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "FADS-GATE/0.2"
+    server_version = "FADS-GATE/0.4"
 
     def _json(self, status: int, value: Any) -> None:
         body = json.dumps(value, sort_keys=True).encode("utf-8")
@@ -80,7 +117,7 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self) -> None:
-        if self.path in {"/", "/healthz"}:
+        if self.path in {"/", "/healthz", "/v1/mesh"}:
             self._json(
                 200,
                 {
@@ -90,6 +127,9 @@ class Handler(BaseHTTPRequestHandler):
                     "profile_date": PROFILE_DATE,
                     "active_contact": False,
                     "mirror_namespace": "house-of-mirrors.decoy",
+                    "node": _node(),
+                    "scope": GLOBAL_SCOPE,
+                    "excluded_countries": ["KP"],
                 },
             )
             return
@@ -106,7 +146,8 @@ class Handler(BaseHTTPRequestHandler):
             payload = json.loads(self.rfile.read(length))
             if not isinstance(payload, dict):
                 raise ValueError("body must be object")
-            self._json(200, _decision(payload))
+            result = _decision(payload)
+            self._json(451 if result.get("state") == "OUT_OF_SCOPE" else 200, result)
         except (ValueError, json.JSONDecodeError) as exc:
             self._json(400, {"error": "invalid_request", "detail": str(exc)})
 
