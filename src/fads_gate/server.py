@@ -16,6 +16,8 @@ from .asset_auth import (
 )
 from .geo_attestation import GeoAttestationError, GeoExcludedError, attest_source_ip, source_ip_from_headers
 from .global_mesh import GLOBAL_SCOPE, evaluate_scope
+from .proximity_jumper import next_hop
+from .proximity_store import list_anchors, parse_anchor, put_anchor
 from .waterplum import PROFILE_DATE, PROFILE_ID, assess_waterplum
 
 ALLOW = {"repo.read", "telemetry.read"}
@@ -113,7 +115,7 @@ def _decision(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "FADS-GATE/0.6"
+    server_version = "FADS-GATE/0.7"
 
     def _json(self, status: int, value: Any) -> None:
         body = json.dumps(value, sort_keys=True).encode("utf-8")
@@ -150,6 +152,8 @@ class Handler(BaseHTTPRequestHandler):
                     "authenticated_sensor_api": "/v2/evaluate",
                     "enrollment_api": "/v1/enroll",
                     "geo_attestation": "two-provider-consensus",
+                    "passive_proximity_api": ["/v2/proximity/observe", "/v2/proximity/next"],
+                    "wifi_network_use": False,
                 },
             )
             return
@@ -183,6 +187,49 @@ class Handler(BaseHTTPRequestHandler):
                         "asset": asdict(identity),
                         "scope": GLOBAL_SCOPE,
                         "geo_attestation": {"country": geo.country, "providers": list(geo.providers), "consensus": geo.consensus},
+                        "node": _node(),
+                    },
+                )
+                return
+
+            if self.path in {"/v2/proximity/observe", "/v2/proximity/next"}:
+                identity = verify_asset_token(bearer_token(self.headers.get("authorization")))
+                source_ip = source_ip_from_headers(dict(self.headers.items()), self.client_address[0] if self.client_address else None)
+                geo = attest_source_ip(source_ip)
+                if geo.country != identity.country:
+                    self._json(403, {"error": "geo_attestation_drift", "route": "NO_OPERATION"})
+                    return
+                payload = self._read_json()
+                anchor = parse_anchor(asset_id=identity.asset_id, payload=payload)
+                put_anchor(anchor)
+                if self.path == "/v2/proximity/observe":
+                    self._json(
+                        200,
+                        {
+                            "schema": "918-PROX/1",
+                            "asset_id": identity.asset_id,
+                            "accepted_landmarks": len(anchor.observations),
+                            "echo_score": anchor.echo_score,
+                            "network_use": False,
+                            "association": False,
+                            "authentication": False,
+                            "node": _node(),
+                        },
+                    )
+                    return
+                hop = next_hop(
+                    current=anchor,
+                    candidates=list_anchors(),
+                )
+                self._json(
+                    200,
+                    {
+                        "schema": "918-PROX/1",
+                        "asset_id": identity.asset_id,
+                        "next_hop": hop,
+                        "network_use": False,
+                        "association": False,
+                        "authentication": False,
                         "node": _node(),
                     },
                 )
