@@ -124,6 +124,8 @@ class Handler(BaseHTTPRequestHandler):
                 method="GET",
                 path=self.path,
                 body=b"",
+                beacon_id_header=self.headers.get("x-918-beacon-id"),
+                beacon_id_header=self.headers.get("x-918-beacon-id"),
                 timestamp_header=self.headers.get("x-918-beacon-timestamp"),
                 signature_header=self.headers.get("x-918-beacon-signature"),
             )
