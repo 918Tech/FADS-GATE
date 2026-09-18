@@ -6,12 +6,26 @@ This branch adds a passive detector and containment decision service for the Wat
 
 The service evaluates telemetry already observed by an authorized defender. It never probes, connects to, scans, redirects traffic toward, or otherwise interacts with a suspected third-party host.
 
-Exact public indicators currently encoded:
+## Current 2026 indicators encoded
 
-- `95.164.17.24` — publicly associated with BeaverTail / Contagious Interview infrastructure.
-- `passports-js`, `bcrypts-js`, `blockscan-api` — malicious npm package names publicly associated with BeaverTail.
+September 3, 2026 Jamf Threat Labs Contagious Interview cluster:
 
-The current FBI behavior profile includes recruiter coding assignments, malicious NPM, malicious VS Code `.vscode/tasks.json` auto-execution, loaders/RATs, credential and wallet access, infostealer behavior, unauthorized network activity, and command/script markers cited in the advisory.
+- Staging C2: `162.0.239.85`
+- Operator C2: `147.124.202.205`
+- Related domains: `w3pi.social`, `miniapp.w3pi.social`, `softcus.net`, `pobelstudio.com`, `pobel.studio`, `kikaiverse.com`, `lalitae.com`
+- Published SHA-256 samples for `/task/tokenlinux.sh`, `/task/mac`, `parser.js`, `scdata`, and `ldata`
+
+March 17, 2026 NTT Security StoatWaffle / WaterPlum indicators:
+
+- `185.163.125.196`
+- `147.124.202.208`
+- `163.245.194.216`
+- `66.235.168.136`
+- `87.236.177.9`
+
+Historical Contagious Interview indicators remain supported at lower recency weight, including `95.164.17.24` and the malicious npm packages `passports-js`, `bcrypts-js`, and `blockscan-api`.
+
+The FBI behavior profile includes recruiter coding assignments, malicious NPM packages, malicious VS Code `.vscode/tasks.json` auto-execution, loaders and RATs, credential and cryptocurrency-wallet access, infostealer behavior, unauthorized network activity, and suspicious script markers such as `curl`, `base64`, `-enc`, `mshta`, `Invoke-WebRequest`, `iwr-uri`, and `hidden`.
 
 ## Decision path
 
@@ -32,7 +46,8 @@ The House-of-Mirrors response uses only documentation-reserved addresses and syn
 ## HTTP service
 
 ```bash
-python -m fads_gate.server
+python -m pip install -e .
+fads-waterplum
 ```
 
 Health:
@@ -59,11 +74,12 @@ Example request:
     "credential_access": true
   },
   "observables": {
-    "ips": ["95.164.17.24"],
+    "ips": ["162.0.239.85"],
+    "domains": ["w3pi.social"],
     "file_paths": [".vscode/tasks.json"],
     "command_text": "curl ... | base64 ..."
   }
 }
 ```
 
-An exact IOC match is treated as a defensive indicator, not independent proof of actor identity.
+An IOC match is treated as a defensive indicator, not independent proof of operator identity. The service performs no active contact with matched infrastructure.
