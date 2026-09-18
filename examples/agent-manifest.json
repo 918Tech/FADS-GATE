@@ -1,0 +1,7 @@
+{
+  "kind": "agent",
+  "agent": true,
+  "protocol": "mcp",
+  "tools": ["repo", "shell"],
+  "capabilities": ["repo.read", "repo.push", "process.exec", "secrets.read"]
+}
