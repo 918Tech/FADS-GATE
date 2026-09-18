@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fads-gate"
-version = "1.1.0"
+version = "1.2.0"
 description = "FADS Guardian: evidence-based agent detection and capability gateway"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [{name = "918 Technologies"}]
-dependencies = ["psutil>=6.0,<7"]
+dependencies = ["psutil>=6.0,<7", "psycopg[binary]>=3.2,<4"]
 
 [project.scripts]
 fads-gate = "fads_gate.cli:main"
@@ -21,6 +21,9 @@ fads-enroll-asset = "fads_gate.enroll_cli:main"
 fads-proximity-jumper = "fads_gate.proximity_cli:main"
 fads-proximity-coordinator = "fads_gate.proximity_coordinator:main"
 fads-watchdog = "fads_gate.watchdog:main"
+fads-evidence-ledger = "fads_gate.evidence_ledger:main"
+fads-benchmark = "fads_gate.benchmark:main"
+fads-release-gate = "fads_gate.release_gate:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
