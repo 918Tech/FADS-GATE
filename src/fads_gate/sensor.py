@@ -48,6 +48,7 @@ ACTIVE_FILENAMES = {
 PROFILE_SELF_EXCLUSIONS = {
     "src/fads_gate/waterplum.py",
     "src/fads_gate/sensor.py",
+    "src/fads_gate/benchmark.py",
     "tests/test_waterplum.py",
     "tests/test_sensor.py",
     "tests/test_global_mesh.py",

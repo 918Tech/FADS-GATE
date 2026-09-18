@@ -22,6 +22,7 @@ from .global_mesh import GLOBAL_SCOPE, evaluate_scope
 from .proximity_jumper import next_hop
 from .proximity_store import list_anchors, parse_anchor, put_anchor
 from .public_threat_arrays import enrich_observables
+from .ledger_client import persist_evidence
 from .waterplum import PROFILE_DATE, PROFILE_ID, assess_waterplum
 from .rate_limit import RateLimitExceeded, check_rate_limit
 from .evidence_signing import sign_evidence
@@ -131,7 +132,7 @@ def _decision(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "FADS-GATE/1.1"
+    server_version = "FADS-GATE/1.2"
 
     def _json(self, status: int, value: Any) -> None:
         body = json.dumps(value, sort_keys=True).encode("utf-8")
@@ -328,6 +329,23 @@ class Handler(BaseHTTPRequestHandler):
                     "attested_country": geo.country,
                     "attestation_providers": list(geo.providers),
                 }
+                receipt = persist_evidence(
+                    {
+                        "schema": "918-IPCTX/1",
+                        "system": "BEACON",
+                        "component": "global-defense-mesh",
+                        "asset": result["asset"],
+                        "node": result.get("node"),
+                        "state": result.get("state"),
+                        "route": result.get("route"),
+                        "decision": result.get("decision"),
+                        "score": result.get("score"),
+                        "matches": result.get("matches", []),
+                        "evidence": result.get("evidence"),
+                        "autonomous_action": result.get("autonomous_action"),
+                    }
+                )
+                result["evidence_persistence"] = receipt
                 self._json(200, result)
                 return
 
