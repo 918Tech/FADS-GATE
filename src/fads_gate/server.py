@@ -14,6 +14,7 @@ from .asset_auth import (
     issue_asset_token,
     verify_asset_token,
 )
+from .geo_attestation import GeoAttestationError, GeoExcludedError, attest_source_ip, source_ip_from_headers
 from .global_mesh import GLOBAL_SCOPE, evaluate_scope
 from .waterplum import PROFILE_DATE, PROFILE_ID, assess_waterplum
 
@@ -112,7 +113,7 @@ def _decision(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "FADS-GATE/0.5"
+    server_version = "FADS-GATE/0.6"
 
     def _json(self, status: int, value: Any) -> None:
         body = json.dumps(value, sort_keys=True).encode("utf-8")
@@ -148,6 +149,7 @@ class Handler(BaseHTTPRequestHandler):
                     "excluded_countries": ["KP"],
                     "authenticated_sensor_api": "/v2/evaluate",
                     "enrollment_api": "/v1/enroll",
+                    "geo_attestation": "two-provider-consensus",
                 },
             )
             return
@@ -160,11 +162,19 @@ class Handler(BaseHTTPRequestHandler):
                     self._json(401, {"error": "invalid_enrollment_key"})
                     return
                 payload = self._read_json()
+                source_ip = source_ip_from_headers(dict(self.headers.items()), self.client_address[0] if self.client_address else None)
+                geo = attest_source_ip(source_ip)
+                expected_country = str(payload.get("country", "")).strip().upper()
+                if expected_country and expected_country != geo.country:
+                    self._json(409, {"error": "country_attestation_mismatch", "attested_country": geo.country})
+                    return
                 token, identity = issue_asset_token(
                     asset_id=str(payload.get("asset_id", "")),
-                    country=str(payload.get("country", "")),
+                    country=geo.country,
                     region=str(payload.get("region", "")),
                     platform=str(payload.get("platform", "")),
+                    attested_ip_hash=geo.source_ip_hash,
+                    attestation_providers=geo.providers,
                 )
                 self._json(
                     201,
@@ -172,6 +182,7 @@ class Handler(BaseHTTPRequestHandler):
                         "token": token,
                         "asset": asdict(identity),
                         "scope": GLOBAL_SCOPE,
+                        "geo_attestation": {"country": geo.country, "providers": list(geo.providers), "consensus": geo.consensus},
                         "node": _node(),
                     },
                 )
@@ -179,6 +190,11 @@ class Handler(BaseHTTPRequestHandler):
 
             if self.path == "/v2/evaluate":
                 identity = verify_asset_token(bearer_token(self.headers.get("authorization")))
+                source_ip = source_ip_from_headers(dict(self.headers.items()), self.client_address[0] if self.client_address else None)
+                geo = attest_source_ip(source_ip)
+                if geo.country != identity.country:
+                    self._json(403, {"error": "geo_attestation_drift", "token_country": identity.country, "attested_country": geo.country, "route": "NO_OPERATION"})
+                    return
                 payload = self._read_json()
                 payload["protected_asset"] = {
                     "country": identity.country,
@@ -192,6 +208,8 @@ class Handler(BaseHTTPRequestHandler):
                     "region": identity.region,
                     "platform": identity.platform,
                     "expires_at": identity.expires_at,
+                    "attested_country": geo.country,
+                    "attestation_providers": list(geo.providers),
                 }
                 self._json(200, result)
                 return
@@ -203,6 +221,10 @@ class Handler(BaseHTTPRequestHandler):
                 return
 
             self._json(404, {"error": "not_found"})
+        except GeoExcludedError as exc:
+            self._json(451, {"error": "geo_excluded", "detail": str(exc), "route": "NO_OPERATION"})
+        except GeoAttestationError as exc:
+            self._json(503, {"error": "geo_attestation_unavailable", "detail": str(exc), "route": "NO_OPERATION"})
         except AssetAuthError as exc:
             self._json(401, {"error": "asset_auth", "detail": str(exc)})
         except (ValueError, json.JSONDecodeError) as exc:

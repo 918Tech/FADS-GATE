@@ -2,11 +2,10 @@
 $ErrorActionPreference = "Stop"
 
 if (-not $env:FADS_ENROLLMENT_KEY) { throw "Set FADS_ENROLLMENT_KEY for one-time enrollment." }
-if (-not $env:FADS_COUNTRY) { throw "Set FADS_COUNTRY to the protected asset two-letter country code." }
 if (-not $env:FADS_REGION) { throw "Set FADS_REGION to the protected asset region." }
 
 $AssetId = if ($env:FADS_ASSET_ID) { $env:FADS_ASSET_ID } else { $env:COMPUTERNAME }
-$Ref = if ($env:FADS_VERSION_REF) { $env:FADS_VERSION_REF } else { "e5c47d6f9521cc1ad574ee3face37044d148fccb" }
+$Ref = if ($env:FADS_VERSION_REF) { $env:FADS_VERSION_REF } else { "main" }
 $Base = Join-Path $env:ProgramData "918 Technologies\FADS"
 $Venv = Join-Path $Base "venv"
 $TokenFile = Join-Path $Base "fads.asset"
@@ -19,7 +18,7 @@ $Python = (Get-Command python.exe -ErrorAction Stop).Source
 & $Python -m venv $Venv
 & $VenvPython -m pip install --upgrade pip
 & $VenvPython -m pip install "git+https://github.com/918Tech/FADS-GATE.git@$Ref"
-& $EnrollExe --asset-id $AssetId --country $env:FADS_COUNTRY --region $env:FADS_REGION --platform windows --output $TokenFile
+& $EnrollExe --asset-id $AssetId --region $env:FADS_REGION --platform windows --output $TokenFile
 
 $acl = Get-Acl $TokenFile
 $acl.SetAccessRuleProtection($true, $false)
