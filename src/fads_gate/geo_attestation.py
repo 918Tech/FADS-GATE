@@ -22,6 +22,10 @@ class GeoAttestationError(ValueError):
     pass
 
 
+class GeoExcludedError(GeoAttestationError):
+    pass
+
+
 @dataclass(frozen=True)
 class GeoAttestation:
     country: str
@@ -120,7 +124,7 @@ def attest_source_ip(ip: str) -> GeoAttestation:
 
     country = countries[0]
     if country in EXCLUDED_COUNTRIES:
-        raise GeoAttestationError("source country excluded by GLOBAL_EXCEPT_KP policy")
+        raise GeoExcludedError("source country excluded by GLOBAL_EXCEPT_KP policy")
 
     salt = os.environ.get("FADS_GEO_HASH_SALT", "")
     if len(salt) < 32:
