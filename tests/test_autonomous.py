@@ -22,7 +22,7 @@ class AutonomousDefenseTests(unittest.TestCase):
         }
         enrichment = {
             "schema": "918-PUBLIC-THREAT-ARRAYS/1",
-            "sources_used": ["greynoise-community"],
+            "sources_used": ["greynoise-community", "threatfox"],
             "findings": [],
             "malicious_infrastructure": ["8.8.8.8"],
             "threat_clusters": ["example-cluster"],
@@ -49,6 +49,7 @@ class AutonomousDefenseTests(unittest.TestCase):
             "granted": ["repo.read", "telemetry.read"],
         }
         enrichment = {
+            "sources_used": ["greynoise-community"],
             "malicious_infrastructure": ["8.8.8.8"],
             "confidence": 75,
         }
@@ -61,6 +62,22 @@ class AutonomousDefenseTests(unittest.TestCase):
         self.assertEqual(result["route"], "CLOAK_RESTRICTED")
         self.assertFalse(result["autonomous_action"]["remote_contact"])
 
+    def test_single_source_high_confidence_only_restricts(self):
+        base = {
+            "state": "TRUSTED",
+            "route": "CLOAK_CANONICAL",
+            "decision": "ALLOW_LIMITED",
+            "granted": ["repo.read", "telemetry.read"],
+        }
+        enrichment = {
+            "sources_used": ["greynoise-community"],
+            "malicious_infrastructure": ["8.8.8.8"],
+            "confidence": 99,
+        }
+        with patch("fads_gate.autonomous.enrich_observables", return_value=enrichment):
+            result = apply_public_threat_policy(base, {"observables": {"ips": ["8.8.8.8"]}})
+        self.assertEqual(result["state"], "RESTRICTED")
+
     def test_autonomous_policy_does_not_downgrade_terminated_state(self):
         base = {
             "state": "TERMINATED",
@@ -69,6 +86,7 @@ class AutonomousDefenseTests(unittest.TestCase):
             "granted": [],
         }
         enrichment = {
+            "sources_used": ["greynoise-community", "threatfox"],
             "malicious_infrastructure": ["8.8.8.8"],
             "confidence": 100,
         }
