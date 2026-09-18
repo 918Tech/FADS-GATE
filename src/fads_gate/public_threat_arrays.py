@@ -68,7 +68,9 @@ def _clean_ip(value: str) -> str:
 def greynoise_community_lookup(ip: str) -> ThreatArrayFinding | None:
     observable = _clean_ip(ip)
     url = "https://api.greynoise.io/v3/community/" + urllib.parse.quote(observable, safe="")
-    payload = _json_request(url)
+    gn_key = os.environ.get("GREYNOISE_API_KEY", "").strip()
+    gn_headers = {"key": gn_key} if gn_key else {}
+    payload = _json_request(url, headers=gn_headers)
     if payload is None or not isinstance(payload, Mapping):
         return None
 
