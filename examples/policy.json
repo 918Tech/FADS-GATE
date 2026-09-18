@@ -1,0 +1,28 @@
+{
+  "default": "deny",
+  "hard_denies": ["secrets.*", "capability.delegate"],
+  "rules": [
+    {
+      "id": "deny-untrusted-exec",
+      "effect": "deny",
+      "subjects": ["untrusted:*"],
+      "capabilities": ["process.exec", "repo.push", "filesystem.write"],
+      "max_risk": 100
+    },
+    {
+      "id": "trusted-observation",
+      "effect": "allow",
+      "subjects": ["trusted:*"],
+      "capabilities": ["telemetry.read", "repo.read", "filesystem.read", "http.get"],
+      "max_risk": 40
+    },
+    {
+      "id": "declared-agent-observation",
+      "effect": "allow",
+      "subjects": ["agent:*"],
+      "capabilities": ["telemetry.read", "repo.read"],
+      "max_risk": 25,
+      "require_declared_agent": true
+    }
+  ]
+}
