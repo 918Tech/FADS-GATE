@@ -7,6 +7,13 @@ from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
+from .asset_auth import (
+    AssetAuthError,
+    bearer_token,
+    enrollment_key_valid,
+    issue_asset_token,
+    verify_asset_token,
+)
 from .global_mesh import GLOBAL_SCOPE, evaluate_scope
 from .waterplum import PROFILE_DATE, PROFILE_ID, assess_waterplum
 
@@ -105,7 +112,7 @@ def _decision(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "FADS-GATE/0.4"
+    server_version = "FADS-GATE/0.5"
 
     def _json(self, status: int, value: Any) -> None:
         body = json.dumps(value, sort_keys=True).encode("utf-8")
@@ -115,6 +122,15 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("cache-control", "no-store")
         self.end_headers()
         self.wfile.write(body)
+
+    def _read_json(self) -> dict[str, Any]:
+        length = int(self.headers.get("content-length", "0"))
+        if length <= 0 or length > 1_048_576:
+            raise ValueError("invalid body length")
+        payload = json.loads(self.rfile.read(length))
+        if not isinstance(payload, dict):
+            raise ValueError("body must be object")
+        return payload
 
     def do_GET(self) -> None:
         if self.path in {"/", "/healthz", "/v1/mesh"}:
@@ -130,24 +146,65 @@ class Handler(BaseHTTPRequestHandler):
                     "node": _node(),
                     "scope": GLOBAL_SCOPE,
                     "excluded_countries": ["KP"],
+                    "authenticated_sensor_api": "/v2/evaluate",
+                    "enrollment_api": "/v1/enroll",
                 },
             )
             return
         self._json(404, {"error": "not_found"})
 
     def do_POST(self) -> None:
-        if self.path != "/v1/evaluate":
-            self._json(404, {"error": "not_found"})
-            return
         try:
-            length = int(self.headers.get("content-length", "0"))
-            if length <= 0 or length > 1_048_576:
-                raise ValueError("invalid body length")
-            payload = json.loads(self.rfile.read(length))
-            if not isinstance(payload, dict):
-                raise ValueError("body must be object")
-            result = _decision(payload)
-            self._json(451 if result.get("state") == "OUT_OF_SCOPE" else 200, result)
+            if self.path == "/v1/enroll":
+                if not enrollment_key_valid(self.headers.get("x-918-enrollment-key")):
+                    self._json(401, {"error": "invalid_enrollment_key"})
+                    return
+                payload = self._read_json()
+                token, identity = issue_asset_token(
+                    asset_id=str(payload.get("asset_id", "")),
+                    country=str(payload.get("country", "")),
+                    region=str(payload.get("region", "")),
+                    platform=str(payload.get("platform", "")),
+                )
+                self._json(
+                    201,
+                    {
+                        "token": token,
+                        "asset": asdict(identity),
+                        "scope": GLOBAL_SCOPE,
+                        "node": _node(),
+                    },
+                )
+                return
+
+            if self.path == "/v2/evaluate":
+                identity = verify_asset_token(bearer_token(self.headers.get("authorization")))
+                payload = self._read_json()
+                payload["protected_asset"] = {
+                    "country": identity.country,
+                    "region": identity.region,
+                    "platform": identity.platform,
+                }
+                result = _decision(payload)
+                result["asset"] = {
+                    "asset_id": identity.asset_id,
+                    "country": identity.country,
+                    "region": identity.region,
+                    "platform": identity.platform,
+                    "expires_at": identity.expires_at,
+                }
+                self._json(200, result)
+                return
+
+            if self.path == "/v1/evaluate":
+                payload = self._read_json()
+                result = _decision(payload)
+                self._json(451 if result.get("state") == "OUT_OF_SCOPE" else 200, result)
+                return
+
+            self._json(404, {"error": "not_found"})
+        except AssetAuthError as exc:
+            self._json(401, {"error": "asset_auth", "detail": str(exc)})
         except (ValueError, json.JSONDecodeError) as exc:
             self._json(400, {"error": "invalid_request", "detail": str(exc)})
 
