@@ -50,10 +50,9 @@ def source_ip_from_headers(
 ) -> str:
     forwarded = headers.get("x-forwarded-for") or headers.get("X-Forwarded-For") or ""
     candidates = [part.strip() for part in forwarded.split(",") if part.strip()]
-    # Reverse proxies append the connecting client to the right side. Prefer
-    # the rightmost globally routable address so a client-supplied leftmost
-    # value cannot override the proxy-observed hop.
-    for candidate in reversed(candidates):
+    mode = os.environ.get("FADS_X_FORWARDED_FOR_MODE", "first").strip().lower()
+    ordered = candidates if mode == "first" else list(reversed(candidates))
+    for candidate in ordered:
         try:
             return _public_ip(candidate)
         except GeoAttestationError:
