@@ -20,8 +20,8 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install pinned FADS WaterPlum sensor
-        run: python -m pip install "git+https://github.com/918Tech/FADS-GATE.git@1237d163036e807c35756a8e33c1c7004a8f1a3d"
+      - name: Install current FADS WaterPlum sensor
+        run: python -m pip install .
 
       - name: Evaluate repository telemetry
         run: |
