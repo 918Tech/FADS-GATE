@@ -11,7 +11,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="fads-enroll-asset")
     parser.add_argument("--endpoint", default="https://nine18-fads-waterplum.onrender.com/v1/enroll")
     parser.add_argument("--asset-id", required=True)
-    parser.add_argument("--country", required=True)
+    parser.add_argument("--expected-country")
     parser.add_argument("--region", required=True)
     parser.add_argument("--platform", required=True)
     parser.add_argument("--output", required=True)
@@ -26,9 +26,11 @@ def main() -> int:
         return 6
     payload = {
         "asset_id": args.asset_id,
-        "country": args.country,
         "region": args.region,
         "platform": args.platform,
+    }
+    if args.expected_country:
+        payload["country"] = args.expected_country.upper()
     }
     request = urllib.request.Request(
         args.endpoint,
@@ -37,7 +39,7 @@ def main() -> int:
         headers={
             "content-type": "application/json",
             "x-918-enrollment-key": key,
-            "user-agent": "918-FADS-Enrollment/0.5",
+            "user-agent": "918-FADS-Enrollment/0.6",
         },
     )
     with urllib.request.urlopen(request, timeout=15) as response:
