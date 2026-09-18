@@ -7,6 +7,7 @@ from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
+from .continent_beacons import current_beacon
 from .asset_auth import (
     AssetAuthError,
     bearer_token,
@@ -30,11 +31,19 @@ DECOY_TOPOLOGY = (
 )
 
 
-def _node() -> dict[str, str]:
+def _node() -> dict[str, Any]:
+    beacon = current_beacon()
     return {
         "id": os.environ.get("FADS_NODE_ID", "fads-node"),
         "region": os.environ.get("FADS_NODE_REGION", "unknown"),
         "scope": GLOBAL_SCOPE,
+        "beacon": {
+            "id": beacon.beacon_id,
+            "logical_continent": beacon.logical_continent,
+            "hosting_continent": beacon.hosting_continent,
+            "physical_host_region": beacon.physical_host_region,
+            "relay_hosted": beacon.relay_hosted,
+        },
     }
 
 
