@@ -20,6 +20,7 @@ from .geo_attestation import GeoAttestationError, GeoExcludedError, attest_sourc
 from .global_mesh import GLOBAL_SCOPE, evaluate_scope
 from .proximity_jumper import next_hop
 from .proximity_store import list_anchors, parse_anchor, put_anchor
+from .public_threat_arrays import enrich_observables
 from .waterplum import PROFILE_DATE, PROFILE_ID, assess_waterplum
 
 ALLOW = {"repo.read", "telemetry.read"}
@@ -125,7 +126,7 @@ def _decision(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "FADS-GATE/0.8"
+    server_version = "FADS-GATE/0.9"
 
     def _json(self, status: int, value: Any) -> None:
         body = json.dumps(value, sort_keys=True).encode("utf-8")
@@ -165,6 +166,7 @@ class Handler(BaseHTTPRequestHandler):
                     "passive_proximity_api": ["/v2/proximity/observe", "/v2/proximity/next"],
                     "wifi_network_use": False,
                     "cross_beacon_sync": True,
+                    "public_threat_arrays_api": "/v2/threat-arrays/enrich",
                 },
             )
             return
@@ -262,6 +264,32 @@ class Handler(BaseHTTPRequestHandler):
                         "node": _node(),
                     },
                 )
+                return
+
+            if self.path == "/v2/threat-arrays/enrich":
+                identity = verify_asset_token(bearer_token(self.headers.get("authorization")))
+                source_ip = source_ip_from_headers(dict(self.headers.items()), self.client_address[0] if self.client_address else None)
+                geo = attest_source_ip(source_ip)
+                if geo.country != identity.country:
+                    self._json(403, {"error": "geo_attestation_drift", "route": "NO_OPERATION"})
+                    return
+                payload = self._read_json()
+                observables = payload.get("observables", {})
+                if not isinstance(observables, dict):
+                    raise ValueError("observables must be an object")
+                result = enrich_observables(
+                    ips=observables.get("ips", ()) if isinstance(observables.get("ips", ()), list) else (),
+                    domains=observables.get("domains", ()) if isinstance(observables.get("domains", ()), list) else (),
+                    hashes=observables.get("sha256", ()) if isinstance(observables.get("sha256", ()), list) else (),
+                )
+                result["asset"] = {
+                    "asset_id": identity.asset_id,
+                    "country": identity.country,
+                    "region": identity.region,
+                    "platform": identity.platform,
+                }
+                result["node"] = _node()
+                self._json(200, result)
                 return
 
             if self.path == "/v2/evaluate":
