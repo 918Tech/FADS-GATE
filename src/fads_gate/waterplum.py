@@ -6,15 +6,52 @@ from typing import Any, Mapping, Sequence
 PROFILE_ID = "WATERPLUM_CONTAGIOUS_INTERVIEW"
 PROFILE_DATE = "2026-09-18"
 
-# Exact public indicators used only for passive matching. No network contact is made.
-PUBLISHED_IPS = frozenset({"95.164.17.24"})
-PUBLISHED_PACKAGES = frozenset({"passports-js", "bcrypts-js", "blockscan-api"})
+# Public defensive indicators only. Matching is passive; this code never contacts them.
+CURRENT_2026_IPS = frozenset(
+    {
+        # Jamf Threat Labs, 2026-09-03
+        "162.0.239.85",
+        "147.124.202.205",
+        # NTT Security, StoatWaffle / WaterPlum, 2026-03-17
+        "185.163.125.196",
+        "147.124.202.208",
+        "163.245.194.216",
+        "66.235.168.136",
+        "87.236.177.9",
+    }
+)
+
+CURRENT_2026_DOMAINS = frozenset(
+    {
+        "w3pi.social",
+        "miniapp.w3pi.social",
+        "softcus.net",
+        "pobelstudio.com",
+        "pobel.studio",
+        "kikaiverse.com",
+        "lalitae.com",
+    }
+)
+
+CURRENT_2026_SHA256 = frozenset(
+    {
+        "0882bb158878a1ca19320f5160dc93f4608c862f3ab652671bb92a82b2f1eb39",
+        "815a41a0c0426ffec3c9ad08e1fb125a040cf0e41acce2a86b891aeb08648d61",
+        "42620128470e26d473a128f354b77ca2c5fe9e5782e7addc1e3f863dbd0cd9b0",
+        "4c025bda19d6b7b1f9cc209876099b20130a198c18ae22b7809470dde93c62db",
+        "b07f46962c409cb854e34e06abcfc616edcc5a554a43cfac8f4f26cb818a340d",
+    }
+)
+
+HISTORICAL_IPS = frozenset({"95.164.17.24"})
+HISTORICAL_PACKAGES = frozenset({"passports-js", "bcrypts-js", "blockscan-api"})
+
 FBI_COMMAND_MARKERS = (
     "curl",
     "base64",
     "-enc",
     "mshta",
-    "invoke-webrequest-uri",
+    "invoke-webrequest",
     "iwr-uri",
     "hidden",
 )
@@ -53,6 +90,10 @@ def _strings(value: Any) -> tuple[str, ...]:
     return tuple(str(item).strip().lower() for item in value if str(item).strip())
 
 
+def _normalize_domain(value: str) -> str:
+    return value.removeprefix("https://").removeprefix("http://").split("/", 1)[0].split(":", 1)[0].rstrip(".")
+
+
 def assess_waterplum(
     *,
     signals: Mapping[str, Any] | None = None,
@@ -70,12 +111,23 @@ def assess_waterplum(
             reasons.append(f"TTP:{name}+{weight}")
 
     for ip in _strings(observables.get("ips")):
-        if ip in PUBLISHED_IPS:
-            matches.append(f"published-ip:{ip}")
+        if ip in CURRENT_2026_IPS:
+            matches.append(f"published-2026-ip:{ip}")
+        elif ip in HISTORICAL_IPS:
+            matches.append(f"published-historical-ip:{ip}")
+
+    for domain in _strings(observables.get("domains")):
+        normalized = _normalize_domain(domain)
+        if normalized in CURRENT_2026_DOMAINS:
+            matches.append(f"published-2026-domain:{normalized}")
+
+    for digest in _strings(observables.get("sha256")):
+        if digest in CURRENT_2026_SHA256:
+            matches.append(f"published-2026-sha256:{digest}")
 
     for package in _strings(observables.get("packages")):
-        if package in PUBLISHED_PACKAGES:
-            matches.append(f"published-package:{package}")
+        if package in HISTORICAL_PACKAGES:
+            matches.append(f"published-historical-package:{package}")
 
     command_text = str(observables.get("command_text", "")).lower()
     for marker in FBI_COMMAND_MARKERS:
@@ -86,8 +138,18 @@ def assess_waterplum(
         normalized = path.replace("\\", "/")
         if normalized.endswith(".vscode/tasks.json"):
             matches.append("fbi-vscode-task-path")
+        if "/.githooks/" in normalized or "/.git/hooks/" in normalized:
+            matches.append("contagious-interview-git-hook-path")
+        if normalized.endswith("/task/tokenlinux.sh") or normalized.endswith("/task/mac"):
+            matches.append("published-2026-stage-path")
 
-    if any(item.startswith("published-") for item in matches):
+    current_exact = any(item.startswith("published-2026-") for item in matches)
+    historical_exact = any(item.startswith("published-historical-") for item in matches)
+
+    if current_exact:
+        score = max(score, 95)
+        reasons.append("exact-published-2026-waterplum-indicator")
+    elif historical_exact:
         score = max(score, 90)
         reasons.append("exact-published-contagious-interview-indicator")
 
@@ -108,7 +170,7 @@ def assess_waterplum(
             reasons=tuple(reasons),
         )
 
-    if any(item.startswith("published-") for item in matches) or score >= 70:
+    if current_exact or historical_exact or score >= 70:
         return WaterPlumAssessment(
             profile=PROFILE_ID,
             score=score,
