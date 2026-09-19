@@ -142,3 +142,75 @@ def fetch_candidates(*, exclude_asset: str) -> list[SyncedCandidate]:
             )
         )
     return result
+
+
+def publish_defense_event(event: dict[str, Any]) -> dict[str, Any]:
+    bases = coordinator_urls()
+    if not bases:
+        raise BeaconSyncError("proximity coordinator URL not configured")
+    path = "/v2/beacon-sync/defense-event"
+    body = json.dumps(event, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    errors = []
+    accepted = 0
+    for base in bases:
+        signed = headers(method="POST", path=path, body=body)
+        request = urllib.request.Request(
+            base + path,
+            data=body,
+            method="POST",
+            headers={
+                "content-type": "application/json",
+                "user-agent": "918-FADS-DefenseEvent/1.3",
+                **signed,
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=5) as response:
+                payload = json.loads(response.read(262_144))
+            if isinstance(payload, dict) and payload.get("status") == "accepted":
+                accepted += 1
+            else:
+                errors.append(f"{base}: rejected")
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+            errors.append(f"{base}: {exc}")
+    if accepted == 0:
+        raise BeaconSyncError("; ".join(errors) or "defense event rejected")
+    return {
+        "accepted": accepted,
+        "total": len(bases),
+        "status": "accepted" if accepted == len(bases) else "partial",
+        "errors": errors,
+    }
+
+
+def fetch_defense_posture() -> dict[str, Any]:
+    bases = coordinator_urls()
+    if not bases:
+        raise BeaconSyncError("proximity coordinator URL not configured")
+    path = "/v2/beacon-sync/defense-posture"
+    errors = []
+    valid: list[dict[str, Any]] = []
+    for base in bases:
+        signed = headers(method="GET", path=path, body=b"")
+        request = urllib.request.Request(
+            base + path,
+            method="GET",
+            headers={"user-agent": "918-FADS-DefensePosture/1.3", **signed},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=5) as response:
+                payload = json.loads(response.read(262_144))
+            if isinstance(payload, dict) and payload.get("schema") == "918-DEFENSE-POSTURE/1":
+                valid.append(payload)
+            else:
+                errors.append(f"{base}: invalid response")
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+            errors.append(f"{base}: {exc}")
+    if not valid:
+        raise BeaconSyncError("; ".join(errors) or "defense posture unavailable")
+    strongest = max(valid, key=lambda item: int(item.get("severity", 0)))
+    strongest = dict(strongest)
+    strongest["coordinators_responding"] = len(valid)
+    strongest["coordinators_total"] = len(bases)
+    strongest["redundancy"] = "full" if len(valid) == len(bases) else "degraded"
+    return strongest
