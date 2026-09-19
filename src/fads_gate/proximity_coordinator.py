@@ -11,8 +11,10 @@ from typing import Any
 from .beacon_sync_auth import BeaconSyncAuthError, verify
 
 TTL_SECONDS = 180
+DEFENSE_EVENT_TTL_SECONDS = 900
 _LOCK = threading.RLock()
 _ANCHORS: dict[str, dict[str, Any]] = {}
+_DEFENSE_EVENTS: dict[str, dict[str, Any]] = {}
 
 
 def _prune(now: int | None = None) -> None:
@@ -25,6 +27,72 @@ def _prune(now: int | None = None) -> None:
         ]
         for asset_id in stale:
             _ANCHORS.pop(asset_id, None)
+
+
+def _prune_defense_events(now: int | None = None) -> None:
+    current = int(time.time() if now is None else now)
+    with _LOCK:
+        stale = [
+            event_id
+            for event_id, value in _DEFENSE_EVENTS.items()
+            if current - int(value.get("observed_at", 0)) > DEFENSE_EVENT_TTL_SECONDS
+        ]
+        for event_id in stale:
+            _DEFENSE_EVENTS.pop(event_id, None)
+
+
+def _validate_defense_event(payload: dict[str, Any]) -> dict[str, Any]:
+    event_id = str(payload.get("event_id", "")).strip()
+    asset_id = str(payload.get("asset_id", "")).strip()
+    state = str(payload.get("state", "")).strip().upper()
+    route = str(payload.get("route", "")).strip()
+    node = payload.get("node", {})
+    observed_at = int(payload.get("observed_at", int(time.time())))
+    if not event_id or len(event_id) > 256:
+        raise ValueError("invalid event_id")
+    if not asset_id or len(asset_id) > 128:
+        raise ValueError("invalid asset_id")
+    if state not in {"RESTRICTED", "QUARANTINED", "TERMINATED"}:
+        raise ValueError("unsupported defense event state")
+    if not isinstance(node, dict):
+        raise ValueError("node must be object")
+    severity = {"RESTRICTED": 1, "QUARANTINED": 2, "TERMINATED": 3}[state]
+    return {
+        "event_id": event_id,
+        "asset_id": asset_id,
+        "state": state,
+        "severity": severity,
+        "route": route,
+        "observed_at": observed_at,
+        "node": {
+            "id": str(node.get("id", "")),
+            "region": str(node.get("region", "")),
+            "beacon": node.get("beacon", {}) if isinstance(node.get("beacon"), dict) else {},
+        },
+        "remote_action": False,
+    }
+
+
+def _defense_posture() -> dict[str, Any]:
+    _prune_defense_events()
+    with _LOCK:
+        events = list(_DEFENSE_EVENTS.values())
+    severity = max((int(item.get("severity", 0)) for item in events), default=0)
+    mode = {
+        0: "NORMAL",
+        1: "HEIGHTENED",
+        2: "CONTAINMENT",
+        3: "CRITICAL",
+    }.get(severity, "CRITICAL")
+    return {
+        "schema": "918-DEFENSE-POSTURE/1",
+        "mode": mode,
+        "severity": severity,
+        "active_events": len(events),
+        "event_ttl_seconds": DEFENSE_EVENT_TTL_SECONDS,
+        "updated_at": int(time.time()),
+        "remote_action": False,
+    }
 
 
 def _validate_anchor(payload: dict[str, Any]) -> dict[str, Any]:
@@ -79,7 +147,7 @@ def _validate_anchor(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "FADS-PROX-COORD/1.1"
+    server_version = "FADS-PROX-COORD/1.3"
 
     def _json(self, status: int, value: Any) -> None:
         body = json.dumps(value, sort_keys=True).encode("utf-8")
@@ -111,12 +179,13 @@ class Handler(BaseHTTPRequestHandler):
                     "active_anchors": count,
                     "raw_wifi_identifiers": False,
                     "build_commit": os.environ.get("RENDER_GIT_COMMIT", os.environ.get("FADS_BUILD_COMMIT", "unknown")),
+                    "defense_posture": _defense_posture(),
                 },
             )
             return
 
         parsed = urllib.parse.urlparse(self.path)
-        if parsed.path != "/v2/beacon-sync/candidates":
+        if parsed.path not in {"/v2/beacon-sync/candidates", "/v2/beacon-sync/defense-posture"}:
             self._json(404, {"error": "not_found"})
             return
         try:
@@ -128,6 +197,9 @@ class Handler(BaseHTTPRequestHandler):
                 timestamp_header=self.headers.get("x-918-beacon-timestamp"),
                 signature_header=self.headers.get("x-918-beacon-signature"),
             )
+            if parsed.path == "/v2/beacon-sync/defense-posture":
+                self._json(200, _defense_posture())
+                return
             query = urllib.parse.parse_qs(parsed.query)
             exclude = str(query.get("exclude", [""])[0])
             _prune()
@@ -142,7 +214,7 @@ class Handler(BaseHTTPRequestHandler):
             self._json(401, {"error": "beacon_sync_auth", "detail": str(exc)})
 
     def do_POST(self) -> None:
-        if self.path != "/v2/beacon-sync/anchor":
+        if self.path not in {"/v2/beacon-sync/anchor", "/v2/beacon-sync/defense-event"}:
             self._json(404, {"error": "not_found"})
             return
         try:
@@ -151,12 +223,27 @@ class Handler(BaseHTTPRequestHandler):
                 method="POST",
                 path=self.path,
                 body=body,
+                beacon_id_header=self.headers.get("x-918-beacon-id"),
                 timestamp_header=self.headers.get("x-918-beacon-timestamp"),
                 signature_header=self.headers.get("x-918-beacon-signature"),
             )
             payload = json.loads(body)
             if not isinstance(payload, dict):
                 raise ValueError("body must be object")
+            if self.path == "/v2/beacon-sync/defense-event":
+                event = _validate_defense_event(payload)
+                _prune_defense_events()
+                with _LOCK:
+                    _DEFENSE_EVENTS[event["event_id"]] = event
+                self._json(
+                    200,
+                    {
+                        "status": "accepted",
+                        "event_id": event["event_id"],
+                        "posture": _defense_posture(),
+                    },
+                )
+                return
             anchor = _validate_anchor(payload)
             _prune()
             with _LOCK:
