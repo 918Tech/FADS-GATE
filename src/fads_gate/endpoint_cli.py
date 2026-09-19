@@ -40,7 +40,7 @@ def _post(url: str, token: str, telemetry: dict) -> dict:
         headers={
             "authorization": f"Bearer {token}",
             "content-type": "application/json",
-            "user-agent": "918-FADS-Universal-Sensor/0.5",
+            "user-agent": "918-FADS-Universal-Sensor/1.3",
         },
     )
     with urllib.request.urlopen(request, timeout=15) as response:
@@ -90,6 +90,9 @@ def _run_once(args: argparse.Namespace, token: str) -> int:
         "scope": result.get("scope"),
         "asset": result.get("asset"),
         "evidence": result.get("evidence"),
+        "defense_deployment": result.get("defense_deployment"),
+        "defense_posture": result.get("defense_posture"),
+        "evidence_persistence": result.get("evidence_persistence"),
     }
     rendered = json.dumps(output, indent=2, sort_keys=True)
     print(rendered)
