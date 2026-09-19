@@ -3,11 +3,12 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import time
 from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
-from .beacon_sync import BeaconSyncError, fetch_candidates, publish_anchor
+from .beacon_sync import BeaconSyncError, fetch_candidates, publish_anchor, publish_defense_event
 from .continent_beacons import current_beacon
 from .autonomous import apply_public_threat_policy, autonomous_enabled
 from .asset_auth import (
@@ -26,6 +27,7 @@ from .ledger_client import persist_evidence
 from .waterplum import PROFILE_DATE, PROFILE_ID, assess_waterplum
 from .rate_limit import RateLimitExceeded, check_rate_limit
 from .evidence_signing import sign_evidence
+from .defense_posture import current_posture, enabled as attack_activation_enabled, rate_limit_for, start_poller
 
 ALLOW = {"repo.read", "telemetry.read"}
 HARD_DENY = {"secrets.read", "capability.delegate", "network.outbound"}
@@ -132,7 +134,7 @@ def _decision(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "FADS-GATE/1.2"
+    server_version = "FADS-GATE/1.3"
 
     def _json(self, status: int, value: Any) -> None:
         body = json.dumps(value, sort_keys=True).encode("utf-8")
@@ -174,6 +176,8 @@ class Handler(BaseHTTPRequestHandler):
                     "cross_beacon_sync": True,
                     "public_threat_arrays_api": "/v2/threat-arrays/enrich",
                     "autonomous_mode": autonomous_enabled(),
+                    "attack_activated_defense": attack_activation_enabled(),
+                    "defense_posture": current_posture(),
                 },
             )
             return
@@ -182,7 +186,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         try:
             source_key = source_ip_from_headers(dict(self.headers.items()), self.client_address[0] if self.client_address else None)
-            check_rate_limit(f"{self.path}:{source_key}", limit=int(os.environ.get("FADS_RATE_LIMIT", "120")), window_seconds=60)
+            base_limit = int(os.environ.get("FADS_RATE_LIMIT", "120"))
+            check_rate_limit(f"{self.path}:{source_key}", limit=rate_limit_for(base_limit), window_seconds=60)
 
             if self.path == "/v1/enroll":
                 if os.environ.get("FADS_ENROLLMENT_ENABLED", "false").strip().lower() not in {"1","true","yes","on"}:
@@ -329,6 +334,46 @@ class Handler(BaseHTTPRequestHandler):
                     "attested_country": geo.country,
                     "attestation_providers": list(geo.providers),
                 }
+
+                deployment = {
+                    "enabled": attack_activation_enabled(),
+                    "triggered": False,
+                    "state": result.get("state"),
+                    "local_actions": [],
+                    "global_posture_publish": "not_triggered",
+                    "remote_action": False,
+                }
+                if attack_activation_enabled() and result.get("state") in {"RESTRICTED", "QUARANTINED", "TERMINATED"}:
+                    deployment["triggered"] = True
+                    actions = ["CAPABILITY_STRIP", "EVIDENCE_CAPTURE"]
+                    if result.get("state") == "RESTRICTED":
+                        actions.append("CLOAK_RESTRICTED")
+                    elif result.get("state") == "QUARANTINED":
+                        actions.extend(["CLOAK_RESTRICTED", "HOUSE_OF_MIRRORS"])
+                    else:
+                        actions.extend(["SESSION_TERMINATE", "NO_CAPABILITY"])
+                    deployment["local_actions"] = actions
+
+                    event_time = int(time.time())
+                    raw_event_id = (
+                        f"{identity.asset_id}|{result.get('state')}|{result.get('route')}|{event_time // 30}"
+                    )
+                    event = {
+                        "event_id": "sha256:" + hashlib.sha256(raw_event_id.encode("utf-8")).hexdigest(),
+                        "asset_id": identity.asset_id,
+                        "state": result.get("state"),
+                        "route": result.get("route"),
+                        "observed_at": event_time,
+                        "node": result.get("node", _node()),
+                    }
+                    try:
+                        publish_defense_event(event)
+                        deployment["global_posture_publish"] = "accepted"
+                    except BeaconSyncError as exc:
+                        deployment["global_posture_publish"] = "local_degraded"
+                        deployment["sync_error"] = str(exc)
+
+                result["defense_deployment"] = deployment
                 receipt = persist_evidence(
                     {
                         "schema": "918-IPCTX/1",
@@ -343,6 +388,7 @@ class Handler(BaseHTTPRequestHandler):
                         "matches": result.get("matches", []),
                         "evidence": result.get("evidence"),
                         "autonomous_action": result.get("autonomous_action"),
+                        "defense_deployment": result.get("defense_deployment"),
                     }
                 )
                 result["evidence_persistence"] = receipt
@@ -372,6 +418,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> int:
+    start_poller()
     host = os.environ.get("HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", "8080"))
     ThreadingHTTPServer((host, port), Handler).serve_forever()
