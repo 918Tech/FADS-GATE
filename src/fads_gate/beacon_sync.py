@@ -144,7 +144,7 @@ def fetch_candidates(*, exclude_asset: str) -> list[SyncedCandidate]:
     return result
 
 
-def publish_defense_event(event: dict[str, Any]) -> None:
+def publish_defense_event(event: dict[str, Any]) -> dict[str, Any]:
     bases = coordinator_urls()
     if not bases:
         raise BeaconSyncError("proximity coordinator URL not configured")
@@ -175,6 +175,12 @@ def publish_defense_event(event: dict[str, Any]) -> None:
             errors.append(f"{base}: {exc}")
     if accepted == 0:
         raise BeaconSyncError("; ".join(errors) or "defense event rejected")
+    return {
+        "accepted": accepted,
+        "total": len(bases),
+        "status": "accepted" if accepted == len(bases) else "partial",
+        "errors": errors,
+    }
 
 
 def fetch_defense_posture() -> dict[str, Any]:
@@ -183,6 +189,7 @@ def fetch_defense_posture() -> dict[str, Any]:
         raise BeaconSyncError("proximity coordinator URL not configured")
     path = "/v2/beacon-sync/defense-posture"
     errors = []
+    valid: list[dict[str, Any]] = []
     for base in bases:
         signed = headers(method="GET", path=path, body=b"")
         request = urllib.request.Request(
@@ -194,8 +201,16 @@ def fetch_defense_posture() -> dict[str, Any]:
             with urllib.request.urlopen(request, timeout=5) as response:
                 payload = json.loads(response.read(262_144))
             if isinstance(payload, dict) and payload.get("schema") == "918-DEFENSE-POSTURE/1":
-                return payload
-            errors.append(f"{base}: invalid response")
+                valid.append(payload)
+            else:
+                errors.append(f"{base}: invalid response")
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
             errors.append(f"{base}: {exc}")
-    raise BeaconSyncError("; ".join(errors) or "defense posture unavailable")
+    if not valid:
+        raise BeaconSyncError("; ".join(errors) or "defense posture unavailable")
+    strongest = max(valid, key=lambda item: int(item.get("severity", 0)))
+    strongest = dict(strongest)
+    strongest["coordinators_responding"] = len(valid)
+    strongest["coordinators_total"] = len(bases)
+    strongest["redundancy"] = "full" if len(valid) == len(bases) else "degraded"
+    return strongest
