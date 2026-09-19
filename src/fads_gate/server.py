@@ -367,8 +367,10 @@ class Handler(BaseHTTPRequestHandler):
                         "node": result.get("node", _node()),
                     }
                     try:
-                        publish_defense_event(event)
-                        deployment["global_posture_publish"] = "accepted"
+                        publish_result = publish_defense_event(event)
+                        deployment["global_posture_publish"] = publish_result.get("status", "accepted")
+                        deployment["coordinators_accepted"] = publish_result.get("accepted", 0)
+                        deployment["coordinators_total"] = publish_result.get("total", 0)
                     except BeaconSyncError as exc:
                         deployment["global_posture_publish"] = "local_degraded"
                         deployment["sync_error"] = str(exc)
