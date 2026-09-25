@@ -13,4 +13,4 @@ __all__ = [
     "PolicyRule",
 ]
 
-__version__ = "0.1.0"
+__version__ = "1.4.0"
