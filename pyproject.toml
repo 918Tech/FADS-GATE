@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fads-gate"
-version = "1.3.0"
+version = "1.4.0"
 description = "FADS Guardian: evidence-based agent detection and capability gateway"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -24,6 +24,7 @@ fads-watchdog = "fads_gate.watchdog:main"
 fads-evidence-ledger = "fads_gate.evidence_ledger:main"
 fads-benchmark = "fads_gate.benchmark:main"
 fads-release-gate = "fads_gate.release_gate:main"
+fads-arsenal-registry = "fads_gate.arsenal_registry:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
